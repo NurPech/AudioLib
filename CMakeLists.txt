@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS "src/hannah_audio.c"
+         "src/hannah_webrtc_vad.c"
+         "third_party/libfvad/src/fvad.c"
+         "third_party/libfvad/src/signal_processing/division_operations.c"
+         "third_party/libfvad/src/signal_processing/energy.c"
+         "third_party/libfvad/src/signal_processing/get_scaling_square.c"
+         "third_party/libfvad/src/signal_processing/resample_48khz.c"
+         "third_party/libfvad/src/signal_processing/resample_by_2_internal.c"
+         "third_party/libfvad/src/signal_processing/resample_fractional.c"
+         "third_party/libfvad/src/signal_processing/spl_inl.c"
+         "third_party/libfvad/src/vad/vad_core.c"
+         "third_party/libfvad/src/vad/vad_filterbank.c"
+         "third_party/libfvad/src/vad/vad_gmm.c"
+         "third_party/libfvad/src/vad/vad_sp.c"
+    INCLUDE_DIRS "include" "third_party/libfvad/include"
+)
