@@ -5,6 +5,9 @@
 -->
 
 
+## 0.2.3
+- Fix `idf_component.yml` version not being bumped by the release script, which made the `publish:registry` CI job fail on release tags (version already on the registry). `scripts/release.js` now updates `idf_component.yml` alongside `CHANGELOG.md`
+
 ## 0.2.2
 - Publish AudioLib on the [ESP-IDF Component Registry](https://components.espressif.com/components/nurpech/audiolib) (`nurpech/audiolib`), as an MIT-licensed component. Add `idf_component.yml` manifest and root `LICENSE`, an `examples/idf_demo/` project for testing the component standalone, and a CI job to auto-publish new releases
 

@@ -8,6 +8,7 @@ const readline = require('readline');
 
 const CONFIG = {
     changelogFile: 'CHANGELOG.md',
+    manifestFile: 'idf_component.yml',
     wipMarker: '## **WORK IN PROGRESS**',
     allowedBranches: ['main', 'master'],
     pollIntervalMs: 10_000,
@@ -244,9 +245,24 @@ async function start() {
     fs.writeFileSync(changelogPath, newContent);
     console.log(`\x1b[32m✔ ${CONFIG.changelogFile} aktualisiert.\x1b[0m`);
 
+    // idf_component.yml Version mitziehen (falls vorhanden)
+    const manifestPath = path.resolve(process.cwd(), CONFIG.manifestFile);
+    const hasManifest = fs.existsSync(manifestPath);
+    const originalManifestContent = hasManifest ? fs.readFileSync(manifestPath, 'utf8') : null;
+    if (hasManifest) {
+        const versionLineRegex = /^version:\s*.*$/m;
+        if (!versionLineRegex.test(originalManifestContent)) {
+            exit(`${CONFIG.manifestFile} enthält kein 'version:'-Feld.`);
+        }
+        const newManifestContent = originalManifestContent.replace(versionLineRegex, `version: "${newVersion}"`);
+        fs.writeFileSync(manifestPath, newManifestContent);
+        console.log(`\x1b[32m✔ ${CONFIG.manifestFile} aktualisiert.\x1b[0m`);
+    }
+
     const ok = await confirmStep('Bitte Änderungen prüfen:');
     if (!ok) {
         fs.writeFileSync(changelogPath, originalContent);
+        if (hasManifest) fs.writeFileSync(manifestPath, originalManifestContent);
         console.log('Abgebrochen. Changelog wiederhergestellt.');
         process.exit(0);
     }
@@ -254,7 +270,7 @@ async function start() {
     // Release-Branch, Commit, Push
     try {
         git(`git checkout -b ${releaseBranch}`);
-        git(`git add ${CONFIG.changelogFile}`);
+        git(`git add ${CONFIG.changelogFile}${hasManifest ? ` ${CONFIG.manifestFile}` : ''}`);
         git(`git commit -m "chore: bump to version ${newVersion}"`);
         git(`git push -u origin ${releaseBranch}`);
     } catch {
@@ -263,6 +279,7 @@ async function start() {
         run(`git checkout ${currentBranch}`);
         run(`git branch -D ${releaseBranch}`);
         fs.writeFileSync(changelogPath, originalContent);
+        if (hasManifest) fs.writeFileSync(manifestPath, originalManifestContent);
         exit('Rollback abgeschlossen. Lokaler Zustand wiederhergestellt.');
     }
 
