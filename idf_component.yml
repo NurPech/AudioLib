@@ -1,0 +1,5 @@
+version: "0.2.1"
+description: "Lightweight PCM audio processing for voice-assistant style pipelines: format conversion, level metering, resampling, and voice activity detection (RMS-based and WebRTC-based), both as one-shot and streaming APIs."
+url: "https://github.com/NurPech/AudioLib"
+repository: "https://github.com/NurPech/AudioLib.git"
+license: "MIT"

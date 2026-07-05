@@ -4,6 +4,10 @@
     ## **WORK IN PROGRESS**
 -->
 
+
+## 0.2.2
+- Publish AudioLib on the [ESP-IDF Component Registry](https://components.espressif.com/components/nurpech/audiolib) (`nurpech/audiolib`), as an MIT-licensed component. Add `idf_component.yml` manifest and root `LICENSE`, an `examples/idf_demo/` project for testing the component standalone, and a CI job to auto-publish new releases
+
 ## 0.2.1
 - Add public mirror. No functional changes
 

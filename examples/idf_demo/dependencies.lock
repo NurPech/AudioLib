@@ -1,0 +1,16 @@
+dependencies:
+  audiolib:
+    dependencies: []
+    source:
+      path: ../..
+      type: local
+    version: 0.2.1
+  idf:
+    source:
+      type: idf
+    version: 6.0.1
+direct_dependencies:
+- audiolib
+manifest_hash: a747e15eb651e24c2027678b8bb083184d6e195fc6c4d7bf6b3b23d74453f640
+target: esp32
+version: 3.0.0
