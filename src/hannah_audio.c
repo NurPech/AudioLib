@@ -99,8 +99,15 @@ int hannah_stereo_to_mono(const int16_t *in, int16_t *out, int frames) {
     return 0;
 }
 
-int hannah_resample(const int16_t *in,  int in_samples,  int src_rate,
-                          int16_t *out, int out_samples, int dst_rate) {
+/* Shared resampling loop behind hannah_resample() and hannah_resample_ctx().
+ * bq must already carry the right coefficients for (src_rate, dst_rate) and
+ * whatever delay-line state the caller wants this call to continue from;
+ * its z1/z2 are left holding the state as of the last output sample, so a
+ * caller that wants continuity across calls just keeps reusing the same
+ * hannah_biquad_t. Only read when dst_rate < src_rate. */
+static int hannah_resample_core(const int16_t *in,  int in_samples,  int src_rate,
+                                 int16_t *out, int out_samples, int dst_rate,
+                                 hannah_biquad_t *bq) {
     if (!in || in_samples <= 0 || src_rate <= 0 || !out || out_samples <= 0 || dst_rate <= 0) {
         return -1;
     }
@@ -108,20 +115,11 @@ int hannah_resample(const int16_t *in,  int in_samples,  int src_rate,
         return -1;
     }
     double ratio = (double)dst_rate / src_rate;
+    int    filtering = (dst_rate < src_rate);
 
-    /* When downsampling, low-pass the source below the destination Nyquist
-     * first; otherwise frequencies above dst_rate/2 alias into the output.
-     * The filter runs streaming over the monotonically increasing source
-     * index, keeping only its last two outputs, so no scratch buffer is
-     * allocated — important on the ESP32 target. */
-    int             filtering = (dst_rate < src_rate);
-    hannah_biquad_t bq;
     int    filt_pos  = -1;     /* highest source index already filtered */
     double filt_prev = 0.0;    /* filtered sample at filt_pos - 1       */
     double filt_curr = 0.0;    /* filtered sample at filt_pos           */
-    if (filtering) {
-        biquad_lowpass_init(&bq, 0.45 * dst_rate, src_rate);
-    }
 
     for (int i = 0; i < out_samples; ++i) {
         double src_index  = i / ratio;
@@ -136,7 +134,7 @@ int hannah_resample(const int16_t *in,  int in_samples,  int src_rate,
              * right before it (or the same one at the boundary). */
             while (filt_pos < idx_ceil) {
                 filt_prev = filt_curr;
-                filt_curr = biquad_process(&bq, (double)in[filt_pos + 1]);
+                filt_curr = biquad_process(bq, (double)in[filt_pos + 1]);
                 ++filt_pos;
             }
             s_ceil  = filt_curr;
@@ -150,7 +148,74 @@ int hannah_resample(const int16_t *in,  int in_samples,  int src_rate,
         double w_floor = 1.0 - w_ceil;
         out[i] = (int16_t)(s_floor * w_floor + s_ceil * w_ceil);
     }
+
+    if (filtering) {
+        /* The loop above only walks the filter up to the last source index
+         * an output sample actually needs, which for a one-shot call is
+         * every trailing sample that's simply never read. But a chunked
+         * caller's next call picks up right where this input left off, so
+         * those trailing samples still need to pass through the filter now
+         * to leave bq's delay line correct for the next chunk. */
+        while (filt_pos < in_samples - 1) {
+            filt_prev = filt_curr;
+            filt_curr = biquad_process(bq, (double)in[filt_pos + 1]);
+            ++filt_pos;
+        }
+    }
     return 0;
+}
+
+int hannah_resample(const int16_t *in,  int in_samples,  int src_rate,
+                          int16_t *out, int out_samples, int dst_rate) {
+    /* When downsampling, low-pass the source below the destination Nyquist
+     * first; otherwise frequencies above dst_rate/2 alias into the output.
+     * The filter runs streaming over the monotonically increasing source
+     * index, keeping only its last two outputs, so no scratch buffer is
+     * allocated — important on the ESP32 target. Each call starts the
+     * filter's delay line at zero; hannah_resample_ctx() is the stateful
+     * counterpart for chunked streaming. */
+    hannah_biquad_t bq;
+    if (dst_rate < src_rate) {
+        biquad_lowpass_init(&bq, 0.45 * dst_rate, src_rate);
+    }
+    return hannah_resample_core(in, in_samples, src_rate, out, out_samples, dst_rate, &bq);
+}
+
+void hannah_resample_ctx_init(hannah_resample_ctx_t *ctx) {
+    memset(ctx, 0, sizeof(*ctx));
+}
+
+int hannah_resample_ctx(hannah_resample_ctx_t *ctx,
+                         const int16_t *in,  int in_samples,  int src_rate,
+                         int16_t *out, int out_samples, int dst_rate) {
+    if (!ctx) {
+        return -1;
+    }
+    int filtering = (dst_rate < src_rate);
+
+    /* (Re)compute the LPF coefficients and reset its delay line on the
+     * first call, or whenever src_rate/dst_rate change under us — a rate
+     * change starts a new stream as far as the filter is concerned, so it
+     * gets its own settling transient rather than reusing stale state. */
+    if (filtering && (!ctx->filtering || ctx->src_rate != src_rate || ctx->dst_rate != dst_rate)) {
+        hannah_biquad_t fresh;
+        biquad_lowpass_init(&fresh, 0.45 * dst_rate, src_rate);
+        ctx->b0 = fresh.b0; ctx->b1 = fresh.b1; ctx->b2 = fresh.b2;
+        ctx->a1 = fresh.a1; ctx->a2 = fresh.a2;
+        ctx->z1 = fresh.z1; ctx->z2 = fresh.z2;
+        ctx->src_rate = src_rate;
+        ctx->dst_rate = dst_rate;
+    }
+    ctx->filtering = filtering;
+
+    hannah_biquad_t bq = { ctx->b0, ctx->b1, ctx->b2, ctx->a1, ctx->a2, ctx->z1, ctx->z2 };
+    int rc = hannah_resample_core(in, in_samples, src_rate, out, out_samples, dst_rate, &bq);
+    if (rc == 0 && filtering) {
+        /* Carry the delay line forward for the next chunk. */
+        ctx->z1 = bq.z1;
+        ctx->z2 = bq.z2;
+    }
+    return rc;
 }
 
 int hannah_vad(const int16_t *pcm, int samples, int window_size, float threshold) {

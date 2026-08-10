@@ -4,6 +4,9 @@
     ## **WORK IN PROGRESS**
 -->
 
+## 0.3.0
+- CI now uses the shared `test-changelog`/`sync-public` components from `hannah-components` instead of an inline `sync:public` job — also adds changelog enforcement to this repo's own CI for the first time
+- Add stateful streaming variant of `hannah_resample()`: `hannah_resample_ctx_init`/`hannah_resample_ctx` carry the downsample anti-aliasing filter's delay line across consecutive chunk-by-chunk calls, avoiding a settling transient at every chunk boundary when resampling a continuous stream (e.g. a real-time mic pipeline processing fixed-size frames)
 
 ## 0.2.3
 - Fix `idf_component.yml` version not being bumped by the release script, which made the `publish:registry` CI job fail on release tags (version already on the registry). `scripts/release.js` now updates `idf_component.yml` alongside `CHANGELOG.md`

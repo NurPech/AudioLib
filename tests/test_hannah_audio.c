@@ -83,6 +83,56 @@ static void test_resample_antialiasing(void) {
     printf("test_resample_antialiasing OK\n");
 }
 
+static void test_resample_ctx(void) {
+    /* A mic task feeding fixed 10ms chunks (480 samples @ 48kHz -> 160 @
+     * 16kHz) through the same ctx must get bit-identical output to a single
+     * one-shot call on the whole concatenated buffer — i.e. one settling
+     * transient at stream start, not one per chunk. */
+    enum { CHUNKS = 10, IN_CHUNK = 480, OUT_CHUNK = 160 };
+    int16_t full_in[CHUNKS * IN_CHUNK];
+    for (int i = 0; i < CHUNKS * IN_CHUNK; ++i) {
+        /* Mix of a low tone (survives the LPF) and near-Nyquist content
+         * (must be suppressed) so a broken filter state shows up clearly. */
+        full_in[i] = (int16_t)(8000.0 * sin(2.0 * M_PI * 300.0 * i / 48000.0))
+                   + ((i % 2 == 0) ? 4000 : -4000);
+    }
+
+    int16_t oneshot_out[CHUNKS * OUT_CHUNK];
+    assert(hannah_resample(full_in, CHUNKS * IN_CHUNK, 48000,
+                            oneshot_out, CHUNKS * OUT_CHUNK, 16000) == 0);
+
+    hannah_resample_ctx_t ctx;
+    hannah_resample_ctx_init(&ctx);
+    int16_t chunked_out[CHUNKS * OUT_CHUNK];
+    for (int c = 0; c < CHUNKS; ++c) {
+        assert(hannah_resample_ctx(&ctx,
+                                    full_in + c * IN_CHUNK, IN_CHUNK, 48000,
+                                    chunked_out + c * OUT_CHUNK, OUT_CHUNK, 16000) == 0);
+    }
+
+    for (int i = 0; i < CHUNKS * OUT_CHUNK; ++i) {
+        assert(chunked_out[i] == oneshot_out[i]);
+    }
+
+    /* Passthrough (no downsampling) must still behave like hannah_resample. */
+    hannah_resample_ctx_t ctx_up;
+    hannah_resample_ctx_init(&ctx_up);
+    int16_t out_identity[IN_CHUNK];
+    assert(hannah_resample_ctx(&ctx_up, full_in, IN_CHUNK, 16000,
+                                out_identity, IN_CHUNK, 16000) == 0);
+    for (int i = 0; i < IN_CHUNK; ++i) {
+        assert(out_identity[i] == full_in[i]);
+    }
+
+    /* bad arguments */
+    assert(hannah_resample_ctx(NULL, full_in, IN_CHUNK, 48000,
+                                chunked_out, OUT_CHUNK, 16000) == -1);
+    assert(hannah_resample_ctx(&ctx, NULL, IN_CHUNK, 48000,
+                                chunked_out, OUT_CHUNK, 16000) == -1);
+
+    printf("test_resample_ctx OK\n");
+}
+
 static void test_vad(void) {
     int16_t silence[256] = {0};
     int16_t loud[256];
@@ -150,6 +200,7 @@ int main(void) {
     test_rms();
     test_resample();
     test_resample_antialiasing();
+    test_resample_ctx();
     test_vad();
     test_vad_stream();
     test_webrtc_vad();

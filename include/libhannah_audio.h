@@ -33,6 +33,46 @@ int hannah_resample(const int16_t *in,  int in_samples,  int src_rate,
 int hannah_vad(const int16_t *pcm, int samples, int window_size, float threshold);
 
 
+/* ── Streaming resample ───────────────────────────────────────────────────
+ * Feed audio chunk-by-chunk (e.g. from an I2S DMA buffer) through the same
+ * resampling algorithm as hannah_resample(), while carrying the downsample
+ * anti-aliasing filter's delay-line state across calls. Calling this
+ * repeatedly on consecutive, contiguous chunks of a stream (same ctx, same
+ * src_rate/dst_rate each call) is equivalent to calling hannah_resample()
+ * once on the whole concatenated buffer: a single settling transient at
+ * stream start instead of one per chunk. Use hannah_resample() instead for
+ * one-shot conversion of a complete buffer.
+ *
+ * Typical flow:
+ *   hannah_resample_ctx_t ctx;
+ *   hannah_resample_ctx_init(&ctx);
+ *   while (i2s_read(in, 480) == OK) {
+ *       hannah_resample_ctx(&ctx, in, 480, 48000, out, 160, 16000);
+ *       // ... use out ...
+ *   }                                                                       */
+
+typedef struct {
+    double b0, b1, b2, a1, a2;  /* internal: anti-aliasing LPF coefficients */
+    double z1, z2;              /* internal: anti-aliasing LPF delay line   */
+    int    filtering;           /* internal: was the last call downsampling */
+    int    src_rate;            /* internal: rates the coefficients above   */
+    int    dst_rate;            /*           were computed for              */
+} hannah_resample_ctx_t;
+
+/* Initialise the context. Call once before the first hannah_resample_ctx(). */
+void hannah_resample_ctx_init(hannah_resample_ctx_t *ctx);
+
+/* Stateful counterpart to hannah_resample() — see arguments and the
+ * out_samples sizing rule there, which apply unchanged per call. When
+ * downsampling, the anti-aliasing filter's delay line carries over from the
+ * previous call on this ctx, as long as src_rate/dst_rate stay the same; a
+ * change in either restarts filtering with a fresh delay line.
+ * Returns 0 on success, -1 on bad arguments (including ctx == NULL). */
+int hannah_resample_ctx(hannah_resample_ctx_t *ctx,
+                         const int16_t *in,  int in_samples,  int src_rate,
+                         int16_t *out, int out_samples, int dst_rate);
+
+
 /* ── Streaming VAD ─────────────────────────────────────────────────────────
  * Feed audio chunk-by-chunk (e.g. from an I2S DMA buffer).
  * The state machine debounces onset and offset so brief noise or brief

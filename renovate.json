@@ -33,6 +33,7 @@
     },
     {
       "matchUpdateTypes": ["digest"],
+      "minimumReleaseAge": "0 days",
       "automerge": true
     }
   ]
